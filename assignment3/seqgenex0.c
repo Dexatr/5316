@@ -1,4 +1,4 @@
-#define _GNU_SOURCE  // Necessary for sched_getcpu
+#define _GNU_SOURCE  // Required for sched_getcpu function
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -9,197 +9,175 @@
 #include <sys/utsname.h>
 #include <time.h>
 
-// Constants for course and assignment identification
-#define COURSE_NUMBER 2
-#define ASSIGNMENT_NUMBER 3
+// Define constants representing the course and assignment numbers
+#define COURSE_ID 2
+#define TASK_ID 3
 
-// Define the Least Common Multiple (LCM) period in seconds
-#define LCM_PERIOD 20  
+// Define the Least Common Multiple (LCM) period for the thread schedules
+#define CYCLE_PERIOD 20
 
-// Function to simulate computational workload using sleep
-void perform_computation(int computation_time_ms) {
-    usleep(computation_time_ms * 1000);  // Convert milliseconds to microseconds
+// Function to simulate some work by sleeping for a specified duration
+void simulate_task(int duration) {
+    usleep(duration * 1000); // Sleep for 'duration' milliseconds
 }
 
-// Function to log the start of a thread with system information
-void log_thread_start(int thread_id) {
-    struct utsname uname_data;
-    uname(&uname_data);  // Get system information
+// Function to log the start of a thread, including system information
+void record_thread_start(int tid) {
+    struct utsname system_info; // Structure to hold system information
+    uname(&system_info);  // Get system information
 
-    time_t now = time(NULL);
-    struct tm *t = localtime(&now);
-    char time_str[100];
-    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);  // Format time as a string
+    time_t now = time(NULL);  // Get the current time
+    struct tm *local_time = localtime(&now);  // Convert time to local time structure
+    char timestamp[100];  // Buffer to hold formatted time
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", local_time);  // Format time
 
-    int core_id = sched_getcpu();  // Get the CPU core the thread is running on
+    int cpu_core = sched_getcpu();  // Get the CPU core on which the thread is running
 
-    // Log the start of the thread with system information
-    syslog(LOG_INFO, "%s %s [COURSE:%d][ASSIGNMENT:%d]: Thread %d start @ %s on core %d",
-           uname_data.sysname, uname_data.nodename, COURSE_NUMBER, ASSIGNMENT_NUMBER, thread_id, time_str, core_id);
+    // Log the system name, node name, course ID, task ID, thread ID, timestamp, and CPU core
+    syslog(LOG_INFO, "%s %s [COURSE:%d][TASK:%d]: Thread %d start @ %s on core %d",
+           system_info.sysname, system_info.nodename, COURSE_ID, TASK_ID, tid, timestamp, cpu_core);
 }
 
-// Function to execute thread S1's workload
-void *thread_s1(void *threadid) {
-    int thread_id = *(int *)threadid;
-    int period = 2;  // Period in seconds
-    int computation_time = 1;  // Computation time in milliseconds
+// Thread function for the first service, which simulates a task every 2ms (50Hz)
+void *thread_function1(void *tid) {
+    int thread_id = *(int *)tid, period = 2, compute_time = 1;  // Set period and computation time
+    struct timespec next_run;  // Structure to hold the next activation time
+    clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
+    time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
 
-    struct timespec next_activation;
-    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
-    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
-
-    while (time(NULL) < end_time) {
-        log_thread_start(thread_id);
-        perform_computation(computation_time);
-        next_activation.tv_sec += period;  // Set the next activation time
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
+    while (time(NULL) < end_time) {  // Loop until the end time is reached
+        record_thread_start(thread_id);  // Log thread start
+        simulate_task(compute_time);  // Simulate the workload
+        next_run.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_run, NULL);  // Sleep until the next activation time
     }
-    pthread_exit(NULL);
+    pthread_exit(NULL);  // Exit the thread when done
 }
 
-// Function to execute thread S2's workload
-void *thread_s2(void *threadid) {
-    int thread_id = *(int *)threadid;
-    int period = 5;  // Period in seconds
-    int computation_time = 1;  // Computation time in milliseconds
+// Thread function for the second service, which simulates a task every 5ms (20Hz)
+void *thread_function2(void *tid) {
+    int thread_id = *(int *)tid, period = 5, compute_time = 1;  // Set period and computation time
+    struct timespec next_run;  // Structure to hold the next activation time
+    clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
+    time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
 
-    struct timespec next_activation;
-    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
-    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
-
-    while (time(NULL) < end_time) {
-        log_thread_start(thread_id);
-        perform_computation(computation_time);
-        next_activation.tv_sec += period;  // Set the next activation time
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
+    while (time(NULL) < end_time) {  // Loop until the end time is reached
+        record_thread_start(thread_id);  // Log thread start
+        simulate_task(compute_time);  // Simulate the workload
+        next_run.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_run, NULL);  // Sleep until the next activation time
     }
-    pthread_exit(NULL);
+    pthread_exit(NULL);  // Exit the thread when done
 }
 
-// Function to execute thread S3's workload
-void *thread_s3(void *threadid) {
-    int thread_id = *(int *)threadid;
-    int period = 10;  // Period in seconds
-    int computation_time = 2;  // Computation time in milliseconds
+// Thread function for the third service, which simulates a task every 10ms (10Hz)
+void *thread_function3(void *tid) {
+    int thread_id = *(int *)tid, period = 10, compute_time = 2;  // Set period and computation time
+    struct timespec next_run;  // Structure to hold the next activation time
+    clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
+    time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
 
-    struct timespec next_activation;
-    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
-    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
-
-    while (time(NULL) < end_time) {
-        log_thread_start(thread_id);
-        perform_computation(computation_time);
-        next_activation.tv_sec += period;  // Set the next activation time
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
+    while (time(NULL) < end_time) {  // Loop until the end time is reached
+        record_thread_start(thread_id);  // Log thread start
+        simulate_task(compute_time);  // Simulate the workload
+        next_run.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_run, NULL);  // Sleep until the next activation time
     }
-    pthread_exit(NULL);
+    pthread_exit(NULL);  // Exit the thread when done
 }
 
-// Function to execute thread S4's workload
-void *thread_s4(void *threadid) {
-    int thread_id = *(int *)threadid;
-    int period = 20;  // Period in seconds
-    int computation_time = 2;  // Computation time in milliseconds
+// Thread function for the fourth service, which simulates a task every 20ms (5Hz)
+void *thread_function4(void *tid) {
+    int thread_id = *(int *)tid, period = 20, compute_time = 2;  // Set period and computation time
+    struct timespec next_run;  // Structure to hold the next activation time
+    clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
+    time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
 
-    struct timespec next_activation;
-    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
-    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
-
-    while (time(NULL) < end_time) {
-        log_thread_start(thread_id);
-        perform_computation(computation_time);
-        next_activation.tv_sec += period;  // Set the next activation time
-        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
+    while (time(NULL) < end_time) {  // Loop until the end time is reached
+        record_thread_start(thread_id);  // Log thread start
+        simulate_task(compute_time);  // Simulate the workload
+        next_run.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_run, NULL);  // Sleep until the next activation time
     }
-    pthread_exit(NULL);
+    pthread_exit(NULL);  // Exit the thread when done
 }
 
-// Function to log system information using the uname command
-void log_uname() {
+// Function to log system information using the "uname" command
+void log_system_info() {
     FILE *fp;
     char buffer[256];
 
-    fp = popen("uname -a", "r");
-    if (fp == NULL) {
-        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] Failed to run uname command", COURSE_NUMBER, ASSIGNMENT_NUMBER);
-        return;  // Graceful return on failure
+    // Run the "uname -a" command and open a pipe to read the output
+    if ((fp = popen("uname -a", "r")) == NULL) {
+        syslog(LOG_ERR, "[COURSE:%d][TASK:%d] uname failed", COURSE_ID, TASK_ID);
+        return;
     }
 
-    // Read the output line by line and log it
+    // Read and log each line of the command output
     while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-        syslog(LOG_INFO, "[COURSE:%d][ASSIGNMENT:%d] %s", COURSE_NUMBER, ASSIGNMENT_NUMBER, buffer);
+        syslog(LOG_INFO, "[COURSE:%d][TASK:%d] %s", COURSE_ID, TASK_ID, buffer);
     }
 
-    pclose(fp);
+    pclose(fp);  // Close the pipe
 }
 
-// Main function to set up and run the threads
+// Main function to create and manage threads
 int main() {
-    pthread_t threads[4];
-    int thread_args[4];
-    int rc;
+    pthread_t threads[4];  // Array to hold thread identifiers
+    int thread_args[4], result;  // Array to hold thread arguments and result code
+    pthread_attr_t attributes;  // Attribute object for setting thread properties
+    struct sched_param parameters;  // Scheduler parameters
 
-    // Initialize syslog for logging
-    openlog("fibonacci_syslog", LOG_PID | LOG_CONS, LOG_USER);
+    openlog("task_syslog", LOG_PID | LOG_CONS, LOG_USER);  // Initialize syslog
 
-    // Log system information using uname
-    log_uname();
+    log_system_info();  // Log system information
 
-    // Set up attributes for real-time scheduling (FIFO policy)
-    pthread_attr_t attr;
-    struct sched_param param;
+    pthread_attr_init(&attributes);  // Initialize thread attributes
+    pthread_attr_setschedpolicy(&attributes, SCHED_FIFO);  // Set scheduling policy to FIFO
 
-    pthread_attr_init(&attr);
-    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
-
-    // Create and start thread S1 with FIFO priority 10
+    // Create and start the first thread
     thread_args[0] = 1;
-    param.sched_priority = 10;
-    pthread_attr_setschedparam(&attr, &param);
-    rc = pthread_create(&threads[0], &attr, thread_s1, (void *)&thread_args[0]);
-    if (rc) {
-        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
-        exit(-1);
+    parameters.sched_priority = 10;  // Set thread priority
+    pthread_attr_setschedparam(&attributes, &parameters);  // Apply priority to attributes
+    if ((result = pthread_create(&threads[0], &attributes, thread_function1, (void *)&thread_args[0])) != 0) {
+        syslog(LOG_ERR, "[COURSE:%d][TASK:%d] pthread_create() failed: %d", COURSE_ID, TASK_ID, result);
+        exit(-1);  // Exit if thread creation fails
     }
 
-    // Create and start thread S2 with FIFO priority 9
+    // Create and start the second thread
     thread_args[1] = 2;
-    param.sched_priority = 9;
-    pthread_attr_setschedparam(&attr, &param);
-    rc = pthread_create(&threads[1], &attr, thread_s2, (void *)&thread_args[1]);
-    if (rc) {
-        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
-        exit(-1);
+    parameters.sched_priority = 9;  // Set thread priority
+    pthread_attr_setschedparam(&attributes, &parameters);  // Apply priority to attributes
+    if ((result = pthread_create(&threads[1], &attributes, thread_function2, (void *)&thread_args[1])) != 0) {
+        syslog(LOG_ERR, "[COURSE:%d][TASK:%d] pthread_create() failed: %d", COURSE_ID, TASK_ID, result);
+        exit(-1);  // Exit if thread creation fails
     }
 
-    // Create and start thread S3 with FIFO priority 8
+    // Create and start the third thread
     thread_args[2] = 3;
-    param.sched_priority = 8;
-    pthread_attr_setschedparam(&attr, &param);
-    rc = pthread_create(&threads[2], &attr, thread_s3, (void *)&thread_args[2]);
-    if (rc) {
-        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
-        exit(-1);
+    parameters.sched_priority = 8;  // Set thread priority
+    pthread_attr_setschedparam(&attributes, &parameters);  // Apply priority to attributes
+    if ((result = pthread_create(&threads[2], &attributes, thread_function3, (void *)&thread_args[2])) != 0) {
+        syslog(LOG_ERR, "[COURSE:%d][TASK:%d] pthread_create() failed: %d", COURSE_ID, TASK_ID, result);
+        exit(-1);  // Exit if thread creation fails
     }
 
-    // Create and start thread S4 with FIFO priority 7
+    // Create and start the fourth thread
     thread_args[3] = 4;
-    param.sched_priority = 7;
-    pthread_attr_setschedparam(&attr, &param);
-    rc = pthread_create(&threads[3], &attr, thread_s4, (void *)&thread_args[3]);
-    if (rc) {
-        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
-        exit(-1);
+    parameters.sched_priority = 7;  // Set thread priority
+    pthread_attr_setschedparam(&attributes, &parameters);  // Apply priority to attributes
+    if ((result = pthread_create(&threads[3], &attributes, thread_function4, (void *)&thread_args[3])) != 0) {
+        syslog(LOG_ERR, "[COURSE:%d][TASK:%d] pthread_create() failed: %d", COURSE_ID, TASK_ID, result);
+        exit(-1);  // Exit if thread creation fails
     }
 
-    // Join the threads to ensure they complete execution
+    // Join all threads to ensure they complete execution
     for (int i = 0; i < 4; i++) {
         pthread_join(threads[i], NULL);
     }
 
-    // Clean up and close syslog
-    pthread_attr_destroy(&attr);
-    closelog();
+    pthread_attr_destroy(&attributes);  // Destroy the attribute object
+    closelog();  // Close the syslog
 
     return 0;
 }
