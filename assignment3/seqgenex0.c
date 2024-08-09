@@ -1,449 +1,204 @@
-// Sequencer Generic to emulate Example 0 assuming millisec time resolution
-
-// Service_1, S1, T1=2,  C1=1, D=T
-// Service_2, S2, T2=5,  C2=1, D=T
-// Service_3, S3, T3=10, C3=2, D=T
-// Service_4, S4, T4=20, C4=2, D=T
-
-// Sequencer - 100 Hz [gives semaphores to all other services]
-// Service_1 - 50 Hz, every other Sequencer loop
-// Service_2 - 20 Hz, every 5th Sequencer loop 
-// Service_3 - 10 Hz, every 10th Sequencer loop
-// Service_4 - 5 Hz, every 20th Sequencer loop
-
-// With the above, priorities by RM policy would be:
-//
-// Sequencer = RT_MAX @ 100 Hz, T=1
-// Service_1 = RT_MAX-1 @ 50 Hz, T=2
-// Service_2 = RT_MAX-2 @ 20 Hz, T=5
-// Service_3 = RT_MAX-3 @ 10 Hz T=10
-// Service_4 = RT_MAX-4 @ 5 Hz T=20
-
-// Here are a few hardware/platform configuration settings
-// that you should also check before running this code:
-//
-// 1) Check to ensure all your CPU cores on in an online state.
-//
-// 2) Check /sys/devices/system/cpu or do lscpu.
-//
-//    echo 1 > /sys/devices/system/cpu/cpu1/online
-//    echo 1 > /sys/devices/system/cpu/cpu2/online
-//    echo 1 > /sys/devices/system/cpu/cpu3/online
-//
-// 3) Check for precision time resolution and support with cat /proc/timer_list
-//
-// 4) Ideally all printf calls should be eliminated as they can interfere with
-//    timing.  They should be replaced with an in-memory event logger or at
-//    least calls to syslog.
-//
-
-#define _GNU_SOURCE
-
+#define _GNU_SOURCE  // Necessary for sched_getcpu
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <pthread.h>
 #include <sched.h>
-#include <time.h>
-#include <semaphore.h>
 #include <syslog.h>
-#include <sys/time.h>
-#include <errno.h>
-#include "seqgen.h"
-#include <sys/sysinfo.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/utsname.h>
+#include <time.h>
 
-#define ABS_DELAY
-#define DRIFT_CONTROL
-#define NUM_THREADS (4+1)
+// Constants for course and assignment identification
+#define COURSE_NUMBER 2
+#define ASSIGNMENT_NUMBER 3
 
-int abortTest=FALSE;
-int abortS1=FALSE, abortS2=FALSE, abortS3=FALSE, abortS4=FALSE;
-sem_t semS1, semS2, semS3, semS4;
-static double start_time = 0;
+// Define the Least Common Multiple (LCM) period in seconds
+#define LCM_PERIOD 20  
 
-pthread_t threads[NUM_THREADS];
-pthread_attr_t rt_sched_attr[NUM_THREADS];
-pthread_attr_t main_attr;
-int rt_max_prio, rt_min_prio;
-struct sched_param rt_param[NUM_THREADS];
-threadParams_t threadParams[NUM_THREADS];
-
-// Function to calculate the Fibonacci sequence to simulate workload
-unsigned long long fibonacci(int n)
-{
-    if (n <= 1)
-        return n;
-    return fibonacci(n - 1) + fibonacci(n - 2);
+// Function to simulate computational workload using sleep
+void perform_computation(int computation_time_ms) {
+    usleep(computation_time_ms * 1000);  // Convert milliseconds to microseconds
 }
 
-// Service 1 function - runs every 2ms (50Hz)
-void *Service_1(void *threadp)
-{
-    double current_time;
-    unsigned long long S1Cnt = 0;
+// Function to log the start of a thread with system information
+void log_thread_start(int thread_id) {
+    struct utsname uname_data;
+    uname(&uname_data);  // Get system information
 
-    current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S1: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    char time_str[100];
+    strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);  // Format time as a string
 
-    while (!abortS1)
-    {
-        sem_wait(&semS1);
-        S1Cnt++;
+    int core_id = sched_getcpu();  // Get the CPU core the thread is running on
 
-        // Simulate workload with Fibonacci series
-        fibonacci(30);
-
-        current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S1: release %llu @ sec=%lf\n", S1Cnt, current_time);
-    }
-
-    pthread_exit((void *)0);
+    // Log the start of the thread with system information
+    syslog(LOG_INFO, "%s %s [COURSE:%d][ASSIGNMENT:%d]: Thread %d start @ %s on core %d",
+           uname_data.sysname, uname_data.nodename, COURSE_NUMBER, ASSIGNMENT_NUMBER, thread_id, time_str, core_id);
 }
 
-// Service 2 function - runs every 5ms (20Hz)
-void *Service_2(void *threadp)
-{
-    double current_time;
-    unsigned long long S2Cnt = 0;
+// Function to execute thread S1's workload
+void *thread_s1(void *threadid) {
+    int thread_id = *(int *)threadid;
+    int period = 2;  // Period in seconds
+    int computation_time = 1;  // Computation time in milliseconds
 
-    current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S2: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    struct timespec next_activation;
+    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
+    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
 
-    while (!abortS2)
-    {
-        sem_wait(&semS2);
-        S2Cnt++;
-
-        // Simulate workload with Fibonacci series
-        fibonacci(30);
-
-        current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S2: release %llu @ sec=%lf\n", S2Cnt, current_time);
+    while (time(NULL) < end_time) {
+        log_thread_start(thread_id);
+        perform_computation(computation_time);
+        next_activation.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
     }
-
-    pthread_exit((void *)0);
+    pthread_exit(NULL);
 }
 
-// Service 3 function - runs every 10ms (10Hz)
-void *Service_3(void *threadp)
-{
-    double current_time;
-    unsigned long long S3Cnt = 0;
+// Function to execute thread S2's workload
+void *thread_s2(void *threadid) {
+    int thread_id = *(int *)threadid;
+    int period = 5;  // Period in seconds
+    int computation_time = 1;  // Computation time in milliseconds
 
-    current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S3: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    struct timespec next_activation;
+    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
+    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
 
-    while (!abortS3)
-    {
-        sem_wait(&semS3);
-        S3Cnt++;
-
-        // Simulate workload with Fibonacci series
-        fibonacci(30);
-
-        current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S3: release %llu @ sec=%lf\n", S3Cnt, current_time);
+    while (time(NULL) < end_time) {
+        log_thread_start(thread_id);
+        perform_computation(computation_time);
+        next_activation.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
     }
-
-    pthread_exit((void *)0);
+    pthread_exit(NULL);
 }
 
-// Service 4 function - runs every 20ms (5Hz)
-void *Service_4(void *threadp)
-{
-    double current_time;
-    unsigned long long S4Cnt = 0;
+// Function to execute thread S3's workload
+void *thread_s3(void *threadid) {
+    int thread_id = *(int *)threadid;
+    int period = 10;  // Period in seconds
+    int computation_time = 2;  // Computation time in milliseconds
 
-    current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S4: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    struct timespec next_activation;
+    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
+    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
 
-    while (!abortS4)
-    {
-        sem_wait(&semS4);
-        S4Cnt++;
-
-        // Simulate workload with Fibonacci series
-        fibonacci(30);
-
-        current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S4: release %llu @ sec=%lf\n", S4Cnt, current_time);
+    while (time(NULL) < end_time) {
+        log_thread_start(thread_id);
+        perform_computation(computation_time);
+        next_activation.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
     }
-
-    pthread_exit((void *)0);
+    pthread_exit(NULL);
 }
 
-// Sequencer function to manage the periodic release of the service threads
-void *Sequencer(void *threadp)
-{
-    struct timespec delay_time = {0, RTSEQ_DELAY_NSEC};
-    struct timespec std_delay_time = {0, RTSEQ_DELAY_NSEC};
-    double current_time, last_time;
-    double delta_t = (RTSEQ_DELAY_NSEC / (double)NANOSEC_PER_SEC);
-    double scale_dt;
-    int rc, delay_cnt = 0;
-    unsigned long long seqCnt = 0;
-    threadParams_t *threadParams = (threadParams_t *)threadp;
+// Function to execute thread S4's workload
+void *thread_s4(void *threadid) {
+    int thread_id = *(int *)threadid;
+    int period = 20;  // Period in seconds
+    int computation_time = 2;  // Computation time in milliseconds
 
-    current_time = getTimeMsec();
-    last_time = current_time - delta_t;
+    struct timespec next_activation;
+    clock_gettime(CLOCK_MONOTONIC, &next_activation);  // Get the current time
+    time_t end_time = time(NULL) + LCM_PERIOD;  // Define the end time for the thread
 
-    syslog(LOG_CRIT, "RTSEQ: start on cpu=%d @ sec=%lf after %lf with dt=%lf\n", sched_getcpu(), current_time, last_time, delta_t);
-
-    do
-    {
-        current_time = getTimeMsec();
-        delay_cnt = 0;
-
-#ifdef DRIFT_CONTROL
-        scale_dt = (current_time - last_time) - delta_t;
-        delay_time.tv_nsec = std_delay_time.tv_nsec - (scale_dt * (NANOSEC_PER_SEC + DT_SCALING_UNCERTAINTY_NANOSEC)) - CLOCK_BIAS_NANOSEC;
-#else
-        delay_time = std_delay_time;
-        scale_dt = delta_t;
-#endif
-
-#ifdef ABS_DELAY
-        struct timespec current_time_val;
-        clock_gettime(CLOCK_REALTIME, &current_time_val);
-        delay_time.tv_sec = current_time_val.tv_sec;
-        delay_time.tv_nsec = current_time_val.tv_nsec + delay_time.tv_nsec;
-
-        if (delay_time.tv_nsec > NANOSEC_PER_SEC)
-        {
-            delay_time.tv_sec += 1;
-            delay_time.tv_nsec -= NANOSEC_PER_SEC;
-        }
-#endif
-
-        // Delay loop with check for early wake-up
-        do
-        {
-#ifdef ABS_DELAY
-            rc = clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &delay_time, NULL);
-#else
-            rc = clock_nanosleep(CLOCK_REALTIME, 0, &delay_time, NULL);
-#endif
-
-            if (rc == EINTR)
-            {
-                syslog(LOG_CRIT, "RTSEQ: EINTR @ sec=%lf\n", current_time);
-                delay_cnt++;
-            }
-            else if (rc < 0)
-            {
-                perror("RTSEQ: nanosleep");
-                exit(-1);
-            }
-
-        } while (rc == EINTR);
-
-        syslog(LOG_CRIT, "RTSEQ: cycle %08llu @ sec=%lf, last=%lf, dt=%lf, sdt=%lf\n",
-               seqCnt, current_time, last_time, (current_time - last_time), scale_dt);
-
-        // Release each service at a sub-rate of the generic sequencer rate
-
-        // Service_1 = RT_MAX-1 @ 50 Hz
-        if ((seqCnt % 2) == 0)
-            sem_post(&semS1);
-
-        // Service_2 = RT_MAX-2 @ 20 Hz
-        if ((seqCnt % 5) == 0)
-            sem_post(&semS2);
-
-        // Service_3 = RT_MAX-3 @ 10 Hz
-        if ((seqCnt % 10) == 0)
-            sem_post(&semS3);
-
-        // Service_4 = RT_MAX-4 @ 5 Hz
-        if ((seqCnt % 20) == 0)
-            sem_post(&semS4);
-
-        seqCnt++;
-        last_time = current_time;
-
-    } while (!abortTest && (seqCnt < threadParams->sequencePeriods));
-
-    // Signal all services to stop and set abort flags
-    sem_post(&semS1);
-    sem_post(&semS2);
-    sem_post(&semS3);
-    sem_post(&semS4);
-    abortS1 = TRUE;
-    abortS2 = TRUE;
-    abortS3 = TRUE;
-    abortS4 = TRUE;
-
-    pthread_exit((void *)0);
+    while (time(NULL) < end_time) {
+        log_thread_start(thread_id);
+        perform_computation(computation_time);
+        next_activation.tv_sec += period;  // Set the next activation time
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation, NULL);  // Sleep until the next activation
+    }
+    pthread_exit(NULL);
 }
 
-// Main function to set up and start the sequencer and service threads
-int main(void)
-{
-    double current_time;
-    struct timespec rt_res;
-    int i, rc, cpuidx;
-    cpu_set_t threadcpu;
-    struct sched_param main_param;
-    pid_t mainpid;
+// Function to log system information using the uname command
+void log_uname() {
+    FILE *fp;
+    char buffer[256];
 
-    // Redirect syslog to file
-    setlogmask(LOG_UPTO(LOG_CRIT));
-    openlog("assignment3", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
-    FILE *syslog_file = fopen("assignment3_syslog.txt", "w");
-    if (syslog_file == NULL) {
-        perror("Failed to open assignment3_syslog.txt");
-        exit(EXIT_FAILURE);
-    }
-    dup2(fileno(syslog_file), STDERR_FILENO);
-
-    start_time = getTimeMsec();
-
-    // Print uname -a to syslog
-    char sys_info[256];
-    FILE *fp = popen("uname -a", "r");
-    if (fp != NULL)
-    {
-        while (fgets(sys_info, sizeof(sys_info), fp) != NULL)
-        {
-            syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] System Info: %s", sys_info);
-        }
-        pclose(fp);
+    fp = popen("uname -a", "r");
+    if (fp == NULL) {
+        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] Failed to run uname command", COURSE_NUMBER, ASSIGNMENT_NUMBER);
+        return;  // Graceful return on failure
     }
 
-    // Delay start for a second to ensure all initializations are complete
-    usleep(1000000);
-
-    printf("Starting High Rate Sequencer Example\n");
-    get_cpu_core_config();
-
-    clock_getres(CLOCK_REALTIME, &rt_res);
-    printf("RT clock resolution is %ld sec, %ld nsec\n", rt_res.tv_sec, rt_res.tv_nsec);
-
-    printf("System has %d processors configured and %d available.\n", get_nprocs_conf(), get_nprocs());
-
-    // Initialize the sequencer semaphores
-    if (sem_init(&semS1, 0, 0))
-    {
-        printf("Failed to initialize S1 semaphore\n");
-        exit(-1);
+    // Read the output line by line and log it
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        syslog(LOG_INFO, "[COURSE:%d][ASSIGNMENT:%d] %s", COURSE_NUMBER, ASSIGNMENT_NUMBER, buffer);
     }
-    if (sem_init(&semS2, 0, 0))
-    {
-        printf("Failed to initialize S2 semaphore\n");
-        exit(-1);
-    }
-    if (sem_init(&semS3, 0, 0))
-    {
-        printf("Failed to initialize S3 semaphore\n");
-        exit(-1);
-    }
-    if (sem_init(&semS4, 0, 0))
-    {
-        printf("Failed to initialize S4 semaphore\n");
+
+    pclose(fp);
+}
+
+// Main function to set up and run the threads
+int main() {
+    pthread_t threads[4];
+    int thread_args[4];
+    int rc;
+
+    // Initialize syslog for logging
+    openlog("fibonacci_syslog", LOG_PID | LOG_CONS, LOG_USER);
+
+    // Log system information using uname
+    log_uname();
+
+    // Set up attributes for real-time scheduling (FIFO policy)
+    pthread_attr_t attr;
+    struct sched_param param;
+
+    pthread_attr_init(&attr);
+    pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+
+    // Create and start thread S1 with FIFO priority 10
+    thread_args[0] = 1;
+    param.sched_priority = 10;
+    pthread_attr_setschedparam(&attr, &param);
+    rc = pthread_create(&threads[0], &attr, thread_s1, (void *)&thread_args[0]);
+    if (rc) {
+        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
         exit(-1);
     }
 
-    mainpid = getpid();
-
-    rt_max_prio = sched_get_priority_max(SCHED_FIFO);
-    rt_min_prio = sched_get_priority_min(SCHED_FIFO);
-
-    // Set the main thread to the highest priority
-    rc = sched_getparam(mainpid, &main_param);
-    main_param.sched_priority = rt_max_prio;
-    rc = sched_setscheduler(getpid(), SCHED_FIFO, &main_param);
-    if (rc < 0)
-        perror("main_param");
-
-    print_scheduler();
-
-    printf("rt_max_prio=%d\n", rt_max_prio);
-    printf("rt_min_prio=%d\n", rt_min_prio);
-
-    // Set up the attributes for each thread
-    for (i = 0; i < NUM_THREADS; i++)
-    {
-        CPU_ZERO(&threadcpu);
-        cpuidx = (3);
-        CPU_SET(cpuidx, &threadcpu);
-
-        rc = pthread_attr_init(&rt_sched_attr[i]);
-        rc = pthread_attr_setinheritsched(&rt_sched_attr[i], PTHREAD_EXPLICIT_SCHED);
-        rc = pthread_attr_setschedpolicy(&rt_sched_attr[i], SCHED_FIFO);
-        rc = pthread_attr_setaffinity_np(&rt_sched_attr[i], sizeof(cpu_set_t), &threadcpu);
-
-        rt_param[i].sched_priority = rt_max_prio - i;
-        pthread_attr_setschedparam(&rt_sched_attr[i], &rt_param[i]);
-
-        threadParams[i].threadIdx = i;
+    // Create and start thread S2 with FIFO priority 9
+    thread_args[1] = 2;
+    param.sched_priority = 9;
+    pthread_attr_setschedparam(&attr, &param);
+    rc = pthread_create(&threads[1], &attr, thread_s2, (void *)&thread_args[1]);
+    if (rc) {
+        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
+        exit(-1);
     }
 
-    printf("Service threads will run on %d CPU cores\n", CPU_COUNT(&threadcpu));
+    // Create and start thread S3 with FIFO priority 8
+    thread_args[2] = 3;
+    param.sched_priority = 8;
+    pthread_attr_setschedparam(&attr, &param);
+    rc = pthread_create(&threads[2], &attr, thread_s3, (void *)&thread_args[2]);
+    if (rc) {
+        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
+        exit(-1);
+    }
 
-    current_time = getTimeMsec();
-    syslog(LOG_CRIT, "RTMAIN: on cpu=%d @ sec=%lf, elapsed=%lf\n", sched_getcpu(), start_time, current_time);
+    // Create and start thread S4 with FIFO priority 7
+    thread_args[3] = 4;
+    param.sched_priority = 7;
+    pthread_attr_setschedparam(&attr, &param);
+    rc = pthread_create(&threads[3], &attr, thread_s4, (void *)&thread_args[3]);
+    if (rc) {
+        syslog(LOG_ERR, "[COURSE:%d][ASSIGNMENT:%d] ERROR; return code from pthread_create() is %d", COURSE_NUMBER, ASSIGNMENT_NUMBER, rc);
+        exit(-1);
+    }
 
-    // Create the service threads, which will block awaiting release from the sequencer
-
-    // Service_1 = RT_MAX-1 @ 50 Hz
-    rt_param[1].sched_priority = rt_max_prio - 1;
-    pthread_attr_setschedparam(&rt_sched_attr[1], &rt_param[1]);
-    rc = pthread_create(&threads[1],               // pointer to thread descriptor
-                        &rt_sched_attr[1],         // use specific attributes
-                        Service_1,                 // thread function entry point
-                        (void *)&(threadParams[1]) // parameters to pass in
-    );
-    if (rc < 0)
-        perror("pthread_create for service 1");
-    else
-        printf("pthread_create successful for service 1\n");
-
-    // Service_2 = RT_MAX-2 @ 20 Hz
-    rt_param[2].sched_priority = rt_max_prio - 2;
-    pthread_attr_setschedparam(&rt_sched_attr[2], &rt_param[2]);
-    rc = pthread_create(&threads[2], &rt_sched_attr[2], Service_2, (void *)&(threadParams[2]));
-    if (rc < 0)
-        perror("pthread_create for service 2");
-    else
-        printf("pthread_create successful for service 2\n");
-
-    // Service_3 = RT_MAX-3 @ 10 Hz
-    rt_param[3].sched_priority = rt_max_prio - 3;
-    pthread_attr_setschedparam(&rt_sched_attr[3], &rt_param[3]);
-    rc = pthread_create(&threads[3], &rt_sched_attr[3], Service_3, (void *)&(threadParams[3]));
-    if (rc < 0)
-        perror("pthread_create for service 3");
-    else
-        printf("pthread_create successful for service 3\n");
-
-    // Service_4 = RT_MAX-4 @ 5 Hz
-    rt_param[4].sched_priority = rt_max_prio - 4;
-    pthread_attr_setschedparam(&rt_sched_attr[4], &rt_param[4]);
-    rc = pthread_create(&threads[4], &rt_sched_attr[4], Service_4, (void *)&(threadParams[4]));
-    if (rc < 0)
-        perror("pthread_create for service 4");
-    else
-        printf("pthread_create successful for service 4\n");
-
-    // Create Sequencer thread, which like a cyclic executive, is highest prio
-    printf("Start sequencer\n");
-    threadParams[0].sequencePeriods = RTSEQ_PERIODS;
-
-    // Sequencer = RT_MAX @ 1000 Hz
-    rt_param[0].sched_priority = rt_max_prio;
-    pthread_attr_setschedparam(&rt_sched_attr[0], &rt_param[0]);
-    rc = pthread_create(&threads[0], &rt_sched_attr[0], Sequencer, (void *)&(threadParams[0]));
-    if (rc < 0)
-        perror("pthread_create for sequencer service 0");
-    else
-        printf("pthread_create successful for sequencer service 0\n");
-
-    // Wait for all threads to complete
-    for (i = 0; i < NUM_THREADS; i++)
+    // Join the threads to ensure they complete execution
+    for (int i = 0; i < 4; i++) {
         pthread_join(threads[i], NULL);
+    }
 
-    printf("\nTEST COMPLETE\n");
-    fclose(syslog_file);
+    // Clean up and close syslog
+    pthread_attr_destroy(&attr);
     closelog();
 
     return 0;
