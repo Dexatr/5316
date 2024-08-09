@@ -2,13 +2,13 @@
 
 // Service_1, S1, T1=2,  C1=1, D=T
 // Service_2, S2, T2=5,  C2=1, D=T
-// Service_3, S3, T3=15, C3=2, D=T
+// Service_3, S3, T3=10, C3=2, D=T
 // Service_4, S4, T4=20, C4=2, D=T
 
 // Sequencer - 100 Hz [gives semaphores to all other services]
 // Service_1 - 50 Hz, every other Sequencer loop
 // Service_2 - 20 Hz, every 5th Sequencer loop 
-// Service_3 - 6.67 Hz, every 15th Sequencer loop
+// Service_3 - 10 Hz, every 10th Sequencer loop
 // Service_4 - 5 Hz, every 20th Sequencer loop
 
 // With the above, priorities by RM policy would be:
@@ -16,7 +16,7 @@
 // Sequencer = RT_MAX @ 100 Hz, T=1
 // Service_1 = RT_MAX-1 @ 50 Hz, T=2
 // Service_2 = RT_MAX-2 @ 20 Hz, T=5
-// Service_3 = RT_MAX-3 @ 6.67 Hz T=15
+// Service_3 = RT_MAX-3 @ 10 Hz T=10
 // Service_4 = RT_MAX-4 @ 5 Hz T=20
 
 // Here are a few hardware/platform configuration settings
@@ -68,6 +68,7 @@ int rt_max_prio, rt_min_prio;
 struct sched_param rt_param[NUM_THREADS];
 threadParams_t threadParams[NUM_THREADS];
 
+// Function to calculate the Fibonacci sequence to simulate workload
 unsigned long long fibonacci(int n)
 {
     if (n <= 1)
@@ -75,13 +76,14 @@ unsigned long long fibonacci(int n)
     return fibonacci(n - 1) + fibonacci(n - 2);
 }
 
+// Service 1 function - runs every 2ms (50Hz)
 void *Service_1(void *threadp)
 {
     double current_time;
     unsigned long long S1Cnt = 0;
 
     current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S1: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S1: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
 
     while (!abortS1)
     {
@@ -92,19 +94,20 @@ void *Service_1(void *threadp)
         fibonacci(30);
 
         current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S1: release %llu @ sec=%lf\n", S1Cnt, current_time);
+        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S1: release %llu @ sec=%lf\n", S1Cnt, current_time);
     }
 
     pthread_exit((void *)0);
 }
 
+// Service 2 function - runs every 5ms (20Hz)
 void *Service_2(void *threadp)
 {
     double current_time;
     unsigned long long S2Cnt = 0;
 
     current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S2: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S2: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
 
     while (!abortS2)
     {
@@ -115,19 +118,20 @@ void *Service_2(void *threadp)
         fibonacci(30);
 
         current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S2: release %llu @ sec=%lf\n", S2Cnt, current_time);
+        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S2: release %llu @ sec=%lf\n", S2Cnt, current_time);
     }
 
     pthread_exit((void *)0);
 }
 
+// Service 3 function - runs every 10ms (10Hz)
 void *Service_3(void *threadp)
 {
     double current_time;
     unsigned long long S3Cnt = 0;
 
     current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S3: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S3: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
 
     while (!abortS3)
     {
@@ -138,19 +142,20 @@ void *Service_3(void *threadp)
         fibonacci(30);
 
         current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S3: release %llu @ sec=%lf\n", S3Cnt, current_time);
+        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S3: release %llu @ sec=%lf\n", S3Cnt, current_time);
     }
 
     pthread_exit((void *)0);
 }
 
+// Service 4 function - runs every 20ms (5Hz)
 void *Service_4(void *threadp)
 {
     double current_time;
     unsigned long long S4Cnt = 0;
 
     current_time = getTimeMsec();
-    syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S4: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
+    syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S4: start on cpu=%d @ sec=%lf\n", sched_getcpu(), current_time);
 
     while (!abortS4)
     {
@@ -161,12 +166,13 @@ void *Service_4(void *threadp)
         fibonacci(30);
 
         current_time = getTimeMsec();
-        syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] S4: release %llu @ sec=%lf\n", S4Cnt, current_time);
+        syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] S4: release %llu @ sec=%lf\n", S4Cnt, current_time);
     }
 
     pthread_exit((void *)0);
 }
 
+// Sequencer function to manage the periodic release of the service threads
 void *Sequencer(void *threadp)
 {
     struct timespec delay_time = {0, RTSEQ_DELAY_NSEC};
@@ -257,6 +263,7 @@ void *Sequencer(void *threadp)
 
     } while (!abortTest && (seqCnt < threadParams->sequencePeriods));
 
+    // Signal all services to stop and set abort flags
     sem_post(&semS1);
     sem_post(&semS2);
     sem_post(&semS3);
@@ -269,6 +276,7 @@ void *Sequencer(void *threadp)
     pthread_exit((void *)0);
 }
 
+// Main function to set up and start the sequencer and service threads
 int main(void)
 {
     double current_time;
@@ -297,12 +305,12 @@ int main(void)
     {
         while (fgets(sys_info, sizeof(sys_info), fp) != NULL)
         {
-            syslog(LOG_CRIT, "[COURSE:1][ASSIGNMENT:3] System Info: %s", sys_info);
+            syslog(LOG_CRIT, "[COURSE:2][ASSIGNMENT:3] System Info: %s", sys_info);
         }
         pclose(fp);
     }
 
-    // delay start for a second
+    // Delay start for a second to ensure all initializations are complete
     usleep(1000000);
 
     printf("Starting High Rate Sequencer Example\n");
@@ -313,7 +321,7 @@ int main(void)
 
     printf("System has %d processors configured and %d available.\n", get_nprocs_conf(), get_nprocs());
 
-    // initialize the sequencer semaphores
+    // Initialize the sequencer semaphores
     if (sem_init(&semS1, 0, 0))
     {
         printf("Failed to initialize S1 semaphore\n");
@@ -340,6 +348,7 @@ int main(void)
     rt_max_prio = sched_get_priority_max(SCHED_FIFO);
     rt_min_prio = sched_get_priority_min(SCHED_FIFO);
 
+    // Set the main thread to the highest priority
     rc = sched_getparam(mainpid, &main_param);
     main_param.sched_priority = rt_max_prio;
     rc = sched_setscheduler(getpid(), SCHED_FIFO, &main_param);
@@ -351,9 +360,9 @@ int main(void)
     printf("rt_max_prio=%d\n", rt_max_prio);
     printf("rt_min_prio=%d\n", rt_min_prio);
 
+    // Set up the attributes for each thread
     for (i = 0; i < NUM_THREADS; i++)
     {
-
         CPU_ZERO(&threadcpu);
         cpuidx = (3);
         CPU_SET(cpuidx, &threadcpu);
@@ -374,7 +383,7 @@ int main(void)
     current_time = getTimeMsec();
     syslog(LOG_CRIT, "RTMAIN: on cpu=%d @ sec=%lf, elapsed=%lf\n", sched_getcpu(), start_time, current_time);
 
-    // Create Service threads which will block awaiting release for:
+    // Create the service threads, which will block awaiting release from the sequencer
 
     // Service_1 = RT_MAX-1 @ 50 Hz
     rt_param[1].sched_priority = rt_max_prio - 1;
@@ -420,7 +429,7 @@ int main(void)
     printf("Start sequencer\n");
     threadParams[0].sequencePeriods = RTSEQ_PERIODS;
 
-    // Sequencer = RT_MAX @ 100 Hz
+    // Sequencer = RT_MAX @ 1000 Hz
     rt_param[0].sched_priority = rt_max_prio;
     pthread_attr_setschedparam(&rt_sched_attr[0], &rt_param[0]);
     rc = pthread_create(&threads[0], &rt_sched_attr[0], Sequencer, (void *)&(threadParams[0]));
@@ -429,6 +438,7 @@ int main(void)
     else
         printf("pthread_create successful for sequencer service 0\n");
 
+    // Wait for all threads to complete
     for (i = 0; i < NUM_THREADS; i++)
         pthread_join(threads[i], NULL);
 
