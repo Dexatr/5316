@@ -14,9 +14,9 @@
 #define TASK_ID 5
 
 // Define the Least Common Multiple (LCM) period for the thread schedules
-#define CYCLE_PERIOD 10  // LCM = 10
+#define CYCLE_PERIOD 10
 
-// Function to simulate some work by sleeping for a specified duration
+// Function to simulate some work by sleeping for a specified duration (in milliseconds)
 void simulate_task(int duration) {
     usleep(duration * 1000); // Sleep for 'duration' milliseconds
 }
@@ -40,7 +40,7 @@ void record_thread_start(int tid) {
 
 // Thread function for the first service, which simulates a task every 2ms (50Hz)
 void *thread_function1(void *tid) {
-    int thread_id = *(int *)tid, period = 2, compute_time = 1;  // Set period and computation time
+    int thread_id = *(int *)tid, period = 2, compute_time = 1;  // Set period and WCET for S1
     struct timespec next_run;  // Structure to hold the next activation time
     clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
     time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
@@ -56,7 +56,7 @@ void *thread_function1(void *tid) {
 
 // Thread function for the second service, which simulates a task every 5ms (20Hz)
 void *thread_function2(void *tid) {
-    int thread_id = *(int *)tid, period = 5, compute_time = 2;  // Set period and computation time
+    int thread_id = *(int *)tid, period = 5, compute_time = 2;  // Set period and WCET for S2
     struct timespec next_run;  // Structure to hold the next activation time
     clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
     time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
@@ -72,7 +72,7 @@ void *thread_function2(void *tid) {
 
 // Thread function for the third service, which simulates a task every 10ms (10Hz)
 void *thread_function3(void *tid) {
-    int thread_id = *(int *)tid, period = 10, compute_time = 1;  // Set period and computation time
+    int thread_id = *(int *)tid, period = 10, compute_time = 1;  // Set period and WCET for S3
     struct timespec next_run;  // Structure to hold the next activation time
     clock_gettime(CLOCK_MONOTONIC, &next_run);  // Get the current time in monotonic clock
     time_t end_time = time(NULL) + CYCLE_PERIOD;  // Calculate when the thread should stop running
@@ -107,7 +107,7 @@ void log_system_info() {
 
 // Main function to create and manage threads
 int main() {
-    pthread_t threads[3];  // Array to hold thread identifiers
+    pthread_t threads[3];  // Array to hold thread identifiers for 3 services
     int thread_args[3], result;  // Array to hold thread arguments and result code
     pthread_attr_t attributes;  // Attribute object for setting thread properties
     struct sched_param parameters;  // Scheduler parameters
